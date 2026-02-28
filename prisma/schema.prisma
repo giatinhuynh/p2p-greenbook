@@ -1,0 +1,413 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["metrics"]
+}
+
+datasource db {
+  provider     = "postgresql"
+  url          = env("DATABASE_URL")
+  directUrl    = env("DIRECT_URL")
+  relationMode = "prisma"
+}
+
+model User {
+  id             String           @id @default(uuid())
+  name           String
+  email          String           @unique
+  role           Role             @default(USER)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  clients        Client[]
+  clientUsers    ClientUser[]
+  addedEmployees EmployeeAccess[] @relation("AddedEmployees")
+
+  @@index([email, role])
+  @@index([role, createdAt])
+  @@index([email, createdAt])
+  @@index([role, updatedAt])
+  @@index([name, email])
+}
+
+model Client {
+  id                 String              @id @default(uuid())
+  companyName        String
+  companyLogo        String?
+  companyEmail       String              @unique
+  companyPhone       String?
+  address            String?
+  city               String?
+  state              String?
+  country            String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  createdById        String
+  createdBy          User                @relation(fields: [createdById], references: [id])
+  projects           Project[]
+  clientUsers        ClientUser[]
+  pendingInvitations PendingInvitation[]
+
+  @@index([createdById])
+  @@index([companyName])
+  @@index([companyEmail])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([companyName, createdAt])
+  @@index([companyName, state, country])
+  @@index([createdById, updatedAt])
+}
+
+model Project {
+  id              String           @id @default(uuid())
+  name            String
+  description     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  builderSpaceId  String?
+  repositoryUrl   String?
+  deploymentUrl   String?
+  status          ProjectStatus    @default(NOT_DEPLOYED)
+  vercelProjectId String?
+  clientId        String
+  deploymentId    String?
+  previewUrl      String?
+  analyticsConfig AnalyticsConfig?
+  trackedUrls     TrackedUrl[]
+  client          Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  heatmapClicks   HeatmapClick[]
+
+  @@index([clientId])
+  @@index([status, createdAt])
+  @@index([name])
+  @@index([clientId, status])
+  @@index([clientId, updatedAt])
+  @@index([status, updatedAt])
+  @@index([name, status])
+  @@index([clientId, name])
+}
+
+model ClientUser {
+  id        String   @id @default(uuid())
+  clientId  String
+  userId    String
+  isPending Boolean  @default(true)
+  role      Role     @default(GUEST)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, userId])
+  @@index([clientId, role])
+  @@index([userId, role])
+  @@index([isPending, createdAt])
+  @@index([clientId, isPending])
+  @@index([userId, isPending])
+  @@index([role, updatedAt])
+}
+
+model PendingInvitation {
+  id        String   @id @default(uuid())
+  email     String
+  clientId  String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([email])
+  @@index([expiresAt])
+  @@index([email, clientId])
+  @@index([clientId, expiresAt])
+}
+
+model AuthAttempt {
+  id        String   @id @default(uuid())
+  email     String
+  type      String
+  success   Boolean
+  ipAddress String
+  userAgent String
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([ipAddress])
+  @@index([createdAt])
+  @@index([email, success])
+  @@index([ipAddress, createdAt])
+}
+
+model EmployeeAccess {
+  id          String    @id @default(uuid())
+  email       String    @unique
+  status      String    @default("PENDING")
+  addedById   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  notes       String?
+  lastLoginAt DateTime?
+  addedBy     User      @relation("AddedEmployees", fields: [addedById], references: [id])
+
+  @@index([addedById])
+  @@index([status])
+  @@index([email])
+  @@index([status, createdAt])
+  @@index([email, status])
+}
+
+model HeatmapClick {
+  id                    String   @id @default(uuid())
+  projectId             String
+  pageUrl               String
+  x                     Int
+  y                     Int
+  viewportWidth         Int
+  viewportHeight        Int
+  elementClicked        String?
+  userAgent             String?
+  sessionId             String?
+  timestamp             DateTime @default(now())
+  relativeX             Float?
+  relativeY             Float?
+  scrollY               Int?
+  fixedAncestorPosition String?
+  fixedAncestorRect     Json?
+  fixedAncestorTag      String?
+  isFixedElement        Boolean?
+  project               Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([projectId, pageUrl])
+  @@index([timestamp])
+  @@index([sessionId])
+  @@index([isFixedElement])
+}
+
+model AnalyticsConfig {
+  id                    String      @id @default(uuid())
+  projectId             String      @unique
+  project               Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Google Analytics configuration
+  gaEnabled             Boolean     @default(false)
+  gaPropertyId          String?
+
+  // Sync settings
+  syncEnabled          Boolean     @default(true)
+  syncInterval         Int         @default(3600)
+  syncBatchSize        Int         @default(1000)
+  lastSynced          DateTime?
+
+  // Capture settings
+  environment          String      @default("production")
+  sampleRate          Float       @default(1.0)
+  filterInternalTraffic Boolean    @default(true)
+  captureConsoleLog    Boolean     @default(false)
+  capturePerformance   Boolean     @default(true)
+
+  // Error handling
+  errorThreshold      Int         @default(100)
+  retryAttempts      Int         @default(3)
+
+  // Timestamps
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  // Relationships
+  metrics            Metric[]
+  dashboards         Dashboard[]
+
+  @@index([projectId])
+  @@index([environment])
+  @@index([lastSynced])
+}
+
+model Metric {
+  id             String            @id @default(uuid())
+  configId       String
+  name           String
+  description    String?
+  type           MetricType
+  category       MetricCategory    @default(DEFAULT)
+  aggregation    MetricAggregation
+  enabled        Boolean           @default(true)
+  isPublic       Boolean           @default(true)
+  eventName      String?
+  filters        Json?
+  properties     Json?
+  visualization  Json?
+  createdBy      String?
+  updatedBy      String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  config         AnalyticsConfig   @relation(fields: [configId], references: [id], onDelete: Cascade)
+  dashboardItems DashboardItem[]
+
+  @@index([configId])
+  @@index([type])
+  @@index([category])
+  @@index([enabled])
+  @@index([isPublic])
+}
+
+model Dashboard {
+  id          String          @id @default(uuid())
+  configId    String
+  name        String
+  description String?
+  isDefault   Boolean         @default(false)
+  isPublic    Boolean         @default(true)
+  layout      Json?
+  createdBy   String?
+  updatedBy   String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  config      AnalyticsConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  items       DashboardItem[]
+
+  @@index([configId])
+  @@index([isDefault])
+  @@index([isPublic])
+}
+
+model DashboardItem {
+  id           String    @id @default(uuid())
+  dashboardId  String
+  metricId     String
+  position     Int
+  size         String
+  chartType    String
+  timeRange    String?
+  customConfig Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  dashboard    Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+  metric       Metric    @relation(fields: [metricId], references: [id])
+
+  @@index([dashboardId])
+  @@index([metricId])
+}
+
+model TrackedUrl {
+  id          String       @id @default(uuid())
+  projectId   String
+  url         String
+  path        String
+  title       String?
+  isActive    Boolean      @default(true)
+  lastVisited DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  metrics     MetricData[]
+
+  @@unique([projectId, path])
+  @@index([projectId])
+  @@index([path])
+  @@index([lastVisited])
+  @@index([isActive])
+}
+
+model MetricData {
+  id         String     @id @default(uuid())
+  urlId      String
+  metricType MetricType
+  value      Float
+  timestamp  DateTime
+  dimension1 String?
+  dimension2 String?
+  dimension3 String?
+  metadata   Json?
+  createdAt  DateTime   @default(now())
+  url        TrackedUrl @relation(fields: [urlId], references: [id], onDelete: Cascade)
+
+  @@index([urlId])
+  @@index([metricType])
+  @@index([timestamp])
+  @@index([dimension1])
+  @@index([dimension2])
+  @@index([dimension3])
+}
+
+enum Role {
+  ADMIN
+  USER
+  GUEST
+}
+
+enum ProjectStatus {
+  NOT_DEPLOYED
+  DEPLOYING
+  DEPLOYED
+  FAILED
+}
+
+enum MetricType {
+  // Basic Metrics
+  PAGE_VIEW
+  TIME_ON_PAGE
+  BOUNCE_RATE
+  CONVERSION_RATE
+  USER_SESSION
+  CLICK_EVENT
+  SCROLL_DEPTH
+  UNIQUE_VIEW
+  COMPLETION_RATE
+  SHARE_COUNT
+  
+  // Geographic Metrics
+  GEO_LOCATION
+  
+  // Section Analytics
+  SECTION_VIEW
+  SECTION_TIME
+  HEATMAP_CLICK
+  
+  // Multimedia Engagement
+  VIDEO_PLAY
+  VIDEO_COMPLETION
+  AUDIO_PLAY
+  AUDIO_DOWNLOAD
+  
+  // CTA Performance
+  CTA_CLICK
+  
+  // Lead Generation
+  FORM_SUBMISSION
+  LEAD_SOURCE
+  
+  // Individual Tracking
+  USER_JOURNEY
+  
+  // Environmental Impact
+  PRINT_COST_SAVED
+  PAPER_SAVED
+  CARBON_REDUCTION
+  
+  // Custom Analytics
+  CUSTOM_EVENT
+  CUSTOM_CONVERSION
+  CUSTOM_AGGREGATE
+}
+
+enum MetricCategory {
+  DEFAULT           // Default category
+  OVERVIEW         // Basic metrics for everyone
+  MARKETING        // Marketing-specific metrics
+  SALES           // Sales-specific metrics
+  ENVIRONMENTAL   // Environmental impact metrics
+  CUSTOM          // Custom metrics
+}
+
+enum MetricAggregation {
+  COUNT            // Simple count of occurrences
+  SUM              // Total sum
+  AVERAGE          // Average value
+  UNIQUE           // Unique occurrences
+  PERCENTAGE       // Percentage calculation
+  DURATION         // Time duration
+  RATE             // Rate calculation (e.g., conversion rate)
+  GEOGRAPHIC       // Geographic distribution
+  MONETARY         // Financial calculations
+  ENVIRONMENTAL    // Environmental impact calculations
+}
